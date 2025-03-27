@@ -1,11 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation template for a custom VPC with high availability across multiple AZs'
+Description: 'CloudFormation template for a custom VPC with high availability across multiple AZs and RDS PostgreSQL'
 
 Parameters:
   EnvironmentName:
     Description: An environment name
     Type: String
-    Default: JDKFramesMono
+    Default: JDKFrames
 
   VpcCIDR:
     Description: The CIDR block for the VPC
@@ -31,6 +31,43 @@ Parameters:
     Description: The CIDR block for the private subnet in AZ 2
     Type: String
     Default: 10.0.4.0/24
+
+  # New parameters for RDS
+  DBName:
+    Description: The name of the database
+    Type: String
+    Default: myappdb
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.
+
+  DBUsername:
+    Description: Username for database access
+    Type: String
+    Default: dbadmin
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.
+
+  DBAllocatedStorage:
+    Description: The size of the database (GB)
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 65536
+
+  DBInstanceClass:
+    Description: The database instance type
+    Type: String
+    Default: db.t3.medium
+    AllowedValues: 
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.m5.large
+    ConstraintDescription: Must be a valid RDS instance type.
 
 Resources:
   # VPC
@@ -206,6 +243,87 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable2
       SubnetId: !Ref PrivateSubnet2
 
+  # RDS Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets available for the RDS database
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  # Security Group for RDS
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow database access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Ref VpcCIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-DBSecurityGroup
+
+  # Secrets Manager Secret for Database Credentials
+  DBMasterSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${EnvironmentName}/database/credentials
+      Description: Master credentials for PostgreSQL database
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DBUsername}"}'
+        GenerateStringKey: password
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
+  # SSM Parameters for Database Connection Details
+  DBHostParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${EnvironmentName}/database/host
+      Type: String
+      Value: !GetAtt PostgreSQLDatabase.Endpoint.Address
+
+  DBPortParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${EnvironmentName}/database/port
+      Type: String
+      Value: !GetAtt PostgreSQLDatabase.Endpoint.Port
+
+  DBNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${EnvironmentName}/database/name
+      Type: String
+      Value: !Ref DBName
+
+  # RDS PostgreSQL Database
+  PostgreSQLDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: !Ref DBName
+      Engine: postgres
+      EngineVersion: '17.2'
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:password}}'
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp2
+      MultiAZ: true
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups: 
+        - !Ref DBSecurityGroup
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PostgreSQLDatabase
+
 Outputs:
   VPC:
     Description: VPC ID
@@ -224,3 +342,22 @@ Outputs:
     Value: !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]]
     Export:
       Name: !Sub ${EnvironmentName}-PrivateSubnets
+
+  # New outputs for database
+  DatabaseHost:
+    Description: Hostname of the created database
+    Value: !GetAtt PostgreSQLDatabase.Endpoint.Address
+    Export:
+      Name: !Sub ${EnvironmentName}-DatabaseHost
+
+  DatabasePort:
+    Description: Port of the created database
+    Value: !GetAtt PostgreSQLDatabase.Endpoint.Port
+    Export:
+      Name: !Sub ${EnvironmentName}-DatabasePort
+
+  DatabaseSecretArn:
+    Description: ARN of the database credentials secret
+    Value: !Ref DBMasterSecret
+    Export:
+      Name: !Sub ${EnvironmentName}-DatabaseSecretArn
