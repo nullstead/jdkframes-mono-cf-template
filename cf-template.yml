@@ -32,11 +32,10 @@ Parameters:
     Type: String
     Default: 10.0.4.0/24
 
-  # New parameters for RDS
   DBName:
     Description: The name of the database
     Type: String
-    Default: myappdb
+    Default: jdkframes
     MinLength: 1
     MaxLength: 64
     AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
@@ -45,11 +44,20 @@ Parameters:
   DBUsername:
     Description: Username for database access
     Type: String
-    Default: dbadmin
+    Default: kponyojdk
     MinLength: 1
     MaxLength: 16
     AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
     ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.
+
+  DBPassword:
+    Description: Password for database access
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 41
+    AllowedPattern: '[a-zA-Z0-9!@#$%^&*()_+=-]*'
+    ConstraintDescription: Must be at least 8 characters long and contain only alphanumeric and special characters.
 
   DBAllocatedStorage:
     Description: The size of the database (GB)
@@ -267,32 +275,20 @@ Resources:
         - Key: Name
           Value: !Sub ${EnvironmentName}-DBSecurityGroup
 
-  # Secrets Manager Secret for Database Credentials..
-  DBMasterSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub ${EnvironmentName}/database/credentials
-      Description: Master credentials for PostgreSQL database
-      GenerateSecretString:
-        SecretStringTemplate: !Sub '{"username": "${DBUsername}"}'
-        GenerateStringKey: password
-        PasswordLength: 16
-        ExcludeCharacters: '"@/\'
-
   # SSM Parameters for Database Connection Details
   DBUsernameParameter:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub /${EnvironmentName}/database/username
       Type: String
-      Value: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:username}}'
+      Value: !Ref DBUsername
 
   DBPasswordParameter:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub /${EnvironmentName}/database/password
-      Type: String
-      Value: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:password}}'
+      Type: SecureString
+      Value: !Ref DBPassword
 
   DBHostParameter:
     Type: AWS::SSM::Parameter
@@ -322,8 +318,8 @@ Resources:
       DBName: !Ref DBName
       Engine: postgres
       EngineVersion: '17.2'
-      MasterUsername: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:username}}'
-      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:password}}'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
       DBInstanceClass: !Ref DBInstanceClass
       AllocatedStorage: !Ref DBAllocatedStorage
       StorageType: gp2
@@ -357,7 +353,6 @@ Outputs:
     Export:
       Name: !Sub ${EnvironmentName}-PrivateSubnets
 
-  # New outputs for database
   DatabaseHost:
     Description: Hostname of the created database
     Value: !GetAtt PostgreSQLDatabase.Endpoint.Address
@@ -370,8 +365,14 @@ Outputs:
     Export:
       Name: !Sub ${EnvironmentName}-DatabasePort
 
-  DatabaseSecretArn:
-    Description: ARN of the database credentials secret
-    Value: !Ref DBMasterSecret
+  DatabaseUsername:
+    Description: Username for the database
+    Value: !Ref DBUsername
     Export:
-      Name: !Sub ${EnvironmentName}-DatabaseSecretArn
+      Name: !Sub ${EnvironmentName}-DatabaseUsername
+
+  DatabaseSecretArn:
+    Description: SSM Parameter Store path for database credentials
+    Value: !Sub /${EnvironmentName}/database/username
+    Export:
+      Name: !Sub ${EnvironmentName}-DatabaseCredentialsPath
