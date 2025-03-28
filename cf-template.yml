@@ -267,7 +267,7 @@ Resources:
         - Key: Name
           Value: !Sub ${EnvironmentName}-DBSecurityGroup
 
-  # Secrets Manager Secret for Database Credentials
+  # Secrets Manager Secret for Database Credentials.
   DBMasterSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
