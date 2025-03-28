@@ -280,6 +280,20 @@ Resources:
         ExcludeCharacters: '"@/\'
 
   # SSM Parameters for Database Connection Details
+  DBUsernameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${EnvironmentName}/database/username
+      Type: SecureString
+      Value: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:username}}'
+
+  DBPasswordParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${EnvironmentName}/database/password
+      Type: SecureString
+      Value: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:password}}'
+      
   DBHostParameter:
     Type: AWS::SSM::Parameter
     Properties:
