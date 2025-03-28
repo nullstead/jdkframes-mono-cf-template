@@ -284,16 +284,16 @@ Resources:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub /${EnvironmentName}/database/username
-      Type: SecureString
+      Type: String
       Value: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:username}}'
 
   DBPasswordParameter:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub /${EnvironmentName}/database/password
-      Type: SecureString
+      Type: String
       Value: !Sub '{{resolve:secretsmanager:${DBMasterSecret}:SecretString:password}}'
-      
+
   DBHostParameter:
     Type: AWS::SSM::Parameter
     Properties:
